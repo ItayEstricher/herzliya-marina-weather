@@ -6,7 +6,6 @@ from datetime import datetime
 # =========================
 # הגדרות משתמש
 # =========================
-# המפתח נמשך כעת באופן מאובטח מתוך השרת
 API_KEY = st.secrets["WINDY_API_KEY"] 
 LAT = 32.1615
 LON = 34.7938
@@ -133,19 +132,36 @@ st.markdown("""
 # =========================
 def get_weather():
     url = "https://api.windy.com/api/point-forecast/v2"
-    # הוספנו את הפרמטרים של הגלים והסוול!
-    payload = {
+    
+    # 1. בקשת נתוני אוויר (מודל gfs)
+    payload_air = {
         "lat": LAT,
         "lon": LON,
         "model": "gfs",
-        "parameters": ["temp", "wind", "windGust", "waves", "swell1", "swellPeriod", "swellDir"],
+        "parameters": ["temp", "wind", "windGust"],
         "levels": ["surface"],
         "key": API_KEY
     } 
     
-    r = requests.post(url, json=payload)
-    r.raise_for_status()
-    return r.json()
+    # 2. בקשת נתוני ים (מודל gfsWave)
+    payload_sea = {
+        "lat": LAT,
+        "lon": LON,
+        "model": "gfsWave",
+        "parameters": ["waves", "swell1"],
+        "levels": ["surface"],
+        "key": API_KEY
+    }
+    
+    # שולחים את הבקשה לאוויר
+    r_air = requests.post(url, json=payload_air)
+    r_air.raise_for_status()
+    
+    # שולחים את הבקשה לים
+    r_sea = requests.post(url, json=payload_sea)
+    r_sea.raise_for_status()
+    
+    return r_air.json(), r_sea.json()
 
 def calculate_wind(u, v):
     speed = math.sqrt(u*u + v*v) * 3.6
@@ -167,7 +183,6 @@ def get_hebrew_direction(deg):
 # =========================
 # בניית הממשק (UI)
 # =========================
-
 st.markdown("""
 <div class="top-header">הרצליה - מרינה 🌊</div>
 <div class="sub-header">
@@ -180,7 +195,7 @@ refresh_clicked = st.button("🔄 רענן נתונים עדכניים")
 if refresh_clicked:
     with st.spinner("מושך נתונים מ-Windy..."):
         try:
-            data = get_weather()
+            air_data, sea_data = get_weather()
             
             html_table = f"""
             <div style="margin-bottom:10px; font-weight:bold; font-size:18px; text-align: right; padding-right: 5px;">
@@ -190,7 +205,7 @@ if refresh_clicked:
                 <div class="t-header">
                     <div>שעה וטמפ'</div>
                     <div>גלים (מטר)</div>
-                    <div>סוול (ס"מ) ומחזור</div>
+                    <div>סוול (ס"מ)</div>
                     <div>משבים (קמ"ש)</div>
                     <div>רוח וכיוון</div>
                 </div>
@@ -198,30 +213,39 @@ if refresh_clicked:
             
             rows_data = []
             
+            # נרוץ על טווחי הזמן של האוויר (כל 3 שעות)
             for i in range(0, 18, 3):
-                timestamp = data["ts"][i] / 1000
-                dt = datetime.fromtimestamp(timestamp)
+                timestamp = air_data["ts"][i]
+                dt = datetime.fromtimestamp(timestamp / 1000)
                 hour_str = dt.strftime("%H:%M")
-                
                 icon = "☀️" if 6 <= dt.hour <= 18 else "🌙"
                 
-                temp = round(data["temp-surface"][i] - 273.15) 
-                
-                # שליפת נתוני ים (שימוש ב-get כדי למנוע קריסה אם הנתון חסר זמנית)
-                wave_m = round(data.get("waves-surface", [0]*20)[i], 1)
-                swell_cm = int(data.get("swell1-surface", [0]*20)[i] * 100)
-                period = round(data.get("swellPeriod-surface", [0]*20)[i], 1)
-                
-                u = data["wind_u-surface"][i]
-                v = data["wind_v-surface"][i]
+                # חילוץ נתוני אוויר
+                temp = round(air_data["temp-surface"][i] - 273.15) 
+                u = air_data["wind_u-surface"][i]
+                v = air_data["wind_v-surface"][i]
                 speed, deg = calculate_wind(u, v)
-                gust = round(data["gust-surface"][i] * 3.6) 
+                gust = round(air_data["gust-surface"][i] * 3.6) 
                 
+                # חילוץ נתוני ים - מחפשים את אותה שעה בדיוק במודל הגלים
+                wave_m = "-"
+                swell_cm = "-"
+                try:
+                    wave_idx = sea_data["ts"].index(timestamp)
+                    
+                    waves_list = sea_data.get("waves-surface", [])
+                    if wave_idx < len(waves_list):
+                        wave_m = round(waves_list[wave_idx], 1)
+                        
+                    swell_list = sea_data.get("swell1-surface", [])
+                    if wave_idx < len(swell_list):
+                        swell_cm = int(swell_list[wave_idx] * 100)
+                except ValueError:
+                    pass # אם מסיבה כלשהי חסר נתון גלים לשעה הספציפית הזו
+                    
                 color_class = get_wind_color(speed)
                 heb_dir = get_hebrew_direction(deg)
-                
                 arrow_rotation = deg + 180
-                
                 sort_key = (dt.hour - 6) % 24
                 
                 row_html = f"""
@@ -231,10 +255,7 @@ if refresh_clicked:
                         <span class="temp-text">{icon} {temp}°C</span>
                     </div>
                     <div style="font-weight:bold; font-size:18px;">{wave_m}</div>
-                    <div>
-                        <div style="font-weight:bold;">{swell_cm} ס"מ</div>
-                        <div style="font-size:12px; color:#666;">{period} שנ'</div>
-                    </div>
+                    <div style="font-weight:bold; font-size:16px;">{swell_cm} ס"מ</div>
                     <div>{gust}</div>
                     <div class="wind-container">
                         <div class="wind-dir-text">{heb_dir}</div>
@@ -259,6 +280,6 @@ if refresh_clicked:
             st.markdown(clean_html, unsafe_allow_html=True)
             
         except Exception as e:
-            st.error(f"אירעה שגיאה. ייתכן והמנוי עדיין לא עודכן במלואו בשרתי Windy: {e}")
+            st.error(f"אירעה שגיאה. פרטי הבעיה: {e}")
 else:
     st.info("👆 לחץ על כפתור הרענון כדי לטעון את התחזית הימית המלאה.")
