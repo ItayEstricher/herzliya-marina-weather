@@ -1,39 +1,41 @@
 import streamlit as st
 import requests
-from datetime import datetime
+import pandas as pd
 
 # הגדרות הרצליה
+API_KEY = st.secrets["WEATHER_API_KEY"]
 LAT, LON = 32.1615, 34.7938
 
 st.set_page_config(page_title="דשבורד מרינה", layout="wide")
 
+# CSS לעיצוב הטבלה
+st.markdown("""
+<style>
+    .t-header { display: grid; grid-template-columns: repeat(4, 1fr); background: #1da1f2; color: white; padding: 10px; font-weight: bold; text-align: center; border-radius: 5px; }
+    .t-row { display: grid; grid-template-columns: repeat(4, 1fr); align-items: center; text-align: center; padding: 10px; border-bottom: 1px solid #ddd; }
+</style>
+""", unsafe_allow_html=True)
+
+@st.cache_data(ttl=3600)
 def get_data():
-    # הכתובות הרשמיות והיציבות ביותר
-    w_url = f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&hourly=temperature_2m,wind_speed_10m,wind_direction_10m&forecast_days=1"
-    m_url = f"https://marine-api.open-meteo.com/v1/marine?latitude={LAT}&longitude={LON}&hourly=wave_height,swell_wave_height,swell_wave_period&cell_selection=sea&forecast_days=1"
-    
-    try:
-        # הוספנו Headers כדי להיראות כמו דפדפן רגיל - זה מונע חסימות אוטומטיות!
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        w_res = requests.get(w_url, headers=headers).json()
-        m_res = requests.get(m_url, headers=headers).json()
-        
-        return w_res.get('hourly'), m_res.get('hourly')
-    except:
-        return None, None
+    url = f"https://api.weatherapi.com/v1/marine.json?key={API_KEY}&q={LAT},{LON}&days=1"
+    res = requests.get(url).json()
+    return res['forecast']['forecastday'][0]['hour']
 
 st.title("🌊 תחזית מרינה הרצליה")
 
-if st.button("🔄 רענן נתונים"):
-    w, m = get_data()
-    if w and m:
-        st.write("תחזית ל-24 שעות:")
-        # הצגת נתונים בסיסית ומהירה
-        st.table(pd.DataFrame({
-            "שעה": [datetime.fromisoformat(t).strftime("%H:%M") for t in w['time'][::3]],
-            "גלים (מ)": m['wave_height'][::3],
-            "סוול (מ)": m['swell_wave_height'][::3],
-            "רוח (קמ\"ש)": [int(x) for x in w['wind_speed_10m'][::3]]
-        }))
-    else:
-        st.error("השרת עדיין חוסם זמנית. נסה להוסיף 'Headers' לקוד (בוצע בקוד זה).")
+data = get_data()
+if data:
+    # הצגת הטבלה
+    st.markdown('<div class="t-header"><div>שעה</div><div>טמפ\'</div><div>רוח (קמ"ש)</div><div>גלים (מ\')</div></div>', unsafe_allow_html=True)
+    
+    for h in data[::3]: # כל 3 שעות
+        st.markdown(f'''
+        <div class="t-row">
+            <div>{h['time'].split(' ')[1]}</div>
+            <div>{h['temp_c']}°C</div>
+            <div>{h['wind_kph']}</div>
+            <div style="font-weight:bold; color:#0077bb;">{h['swell_ht_mt']} מ'</div>
+        </div>''', unsafe_allow_html=True)
+else:
+    st.error("לא הצלחנו למשוך נתונים. בדוק את ה-API Key ב-Secrets.")
