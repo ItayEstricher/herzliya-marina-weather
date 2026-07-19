@@ -1,35 +1,126 @@
 import streamlit as st
 import requests
+import datetime
 
-# הגדרות
+# ==== הגדרות ====
 API_KEY = st.secrets["WEATHER_API_KEY"]
 LAT, LON = 32.1615, 34.7938
 
 st.set_page_config(page_title="הרצליה - מרינה", layout="wide")
 
-# כפתור רענון נתונים
 if st.button("🔄 רענן נתונים"):
     st.cache_data.clear()
 
-st.title("הרצליה - מרינה")
-
-# עיצוב CSS - הכל מרוכז כאן
+# ==== CSS ====
 st.markdown("""
 <style>
-    .forecast-table { width: 100%; border-collapse: collapse; text-align: center; font-family: sans-serif; direction: rtl; }
-    .header-row { background-color: #f0f0f0; font-weight: bold; padding: 15px; border-bottom: 2px solid #ccc; }
-    .data-row { border-bottom: 1px solid #eee; height: 60px; }
-    .wave-cell { background-color: #0077bb; color: white; padding: 8px; font-weight: bold; border-radius: 5px; }
-    .wind-green { background-color: #27ae60; color: white; padding: 4px 8px; border-radius: 4px; }
-    .wind-orange { background-color: #f39c12; color: white; padding: 4px 8px; border-radius: 4px; }
+    /* מסתיר את כותרת ברירת המחדל של Streamlit ואת ה-padding העליון */
+    .block-container { padding-top: 1rem; }
+
+    * { box-sizing: border-box; }
+
+    .app-shell { font-family: 'Segoe UI', Arial, sans-serif; direction: rtl; }
+
+    /* --- פס עליון כחול --- */
+    .top-bar {
+        background: linear-gradient(180deg, #1a8fd1, #1179b8);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 20px;
+        border-radius: 10px 10px 0 0;
+        font-size: 22px;
+        font-weight: 700;
+    }
+    .top-bar .icon { font-size: 20px; opacity: 0.9; }
+
+    /* --- סרגל טאבים --- */
+    .tabs-bar {
+        background: #1a8fd1;
+        display: flex;
+        justify-content: space-around;
+        padding: 10px 0 0 0;
+        border-bottom: 1px solid rgba(255,255,255,0.25);
+    }
+    .tab {
+        color: rgba(255,255,255,0.75);
+        font-size: 15px;
+        padding-bottom: 10px;
+        position: relative;
+    }
+    .tab.active {
+        color: white;
+        font-weight: 700;
+        border-bottom: 3px solid white;
+    }
+    .badge {
+        background: white;
+        color: #1179b8;
+        border-radius: 50%;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 1px 6px;
+        margin-left: 4px;
+    }
+
+    /* --- שורת תאריך --- */
+    .date-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px;
+        background: white;
+        border-bottom: 1px solid #eee;
+        font-size: 16px;
+        color: #333;
+    }
+    .back-arrow { color: #999; font-size: 20px; }
+    .date-bar b { font-size: 19px; }
+
+    /* --- טבלה --- */
+    .forecast-table { width: 100%; border-collapse: collapse; text-align: center; direction: rtl; }
+    .forecast-table th {
+        background: #f4f6f8;
+        color: #555;
+        font-weight: 600;
+        font-size: 13px;
+        padding: 10px 6px;
+        border-bottom: 2px solid #e2e2e2;
+    }
+    .forecast-table td {
+        padding: 6px 4px;
+        font-size: 15px;
+        color: #333;
+        vertical-align: middle;
+    }
+    .row-even td.plain { background: #eaf4fb; }
+    .row-odd td.plain { background: #ffffff; }
+
+    /* בלוק גובה גלים (כחול) */
+    .height-cell {
+        color: white;
+        font-weight: 700;
+        padding: 14px 4px;
+        font-size: 14px;
+    }
+    .height-high { background: #0d6cb0; }
+    .height-low  { background: #3ba9e0; }
+
+    /* בלוק רוח (ירוק/כתום) */
+    .wind-cell {
+        color: white;
+        font-weight: 700;
+        font-size: 13px;
+        padding: 10px 4px;
+    }
+    .wind-cell .wind-inner { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    .wind-green  { background: #27ae60; }
+    .wind-orange { background: #f39c12; }
+
+    .swell-dir-icon { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; color: #333; }
 </style>
 """, unsafe_allow_html=True)
-
-@st.cache_data(ttl=3600)
-def get_data():
-    url = f"https://api.weatherapi.com/v1/marine.json?key={API_KEY}&q={LAT},{LON}&days=1"
-    res = requests.get(url).json()
-    return res['forecast']['forecastday'][0]['hour']
 
 # מילון תרגום לכיווני רוח
 WIND_DIRS = {
@@ -39,34 +130,94 @@ WIND_DIRS = {
     "W": "מערבית", "WNW": "צפון-מערבית", "NW": "צפון-מערבית", "NNW": "צפון-מערבית"
 }
 
+
+@st.cache_data(ttl=3600)
+def get_data():
+    url = f"https://api.weatherapi.com/v1/marine.json?key={API_KEY}&q={LAT},{LON}&days=1"
+    res = requests.get(url).json()
+    return res['forecast']['forecastday'][0]['hour']
+
+
+def arrow_svg(deg, color="white", size=16):
+    """חץ SVG שמסתובב לפי מעלות (0 = צפון, כיוון שהרוח/סוואל 'מגיע ממנו')"""
+    return (
+        f'<svg width="{size}" height="{size}" viewBox="0 0 24 24" '
+        f'style="transform:rotate({deg}deg)">'
+        f'<path d="M12 2 L19 20 L12 16 L5 20 Z" fill="{color}"/></svg>'
+    )
+
+
 data = get_data()
 
 if data:
-    # בניית מחרוזת ה-HTML כולה במשתנה אחד (זה המפתח!)
+    date_str = datetime.date.today().strftime("%d/%m/%Y")
+
+    header_html = f"""
+    <div class="app-shell">
+      <div class="top-bar">
+        <span class="icon">⚙️</span>
+        <span>הרצליה - מרינה</span>
+        <span class="icon">📍</span>
+      </div>
+      <div class="tabs-bar">
+        <div class="tab">קהילה<span class="badge">15</span></div>
+        <div class="tab">מתקדם</div>
+        <div class="tab active">תחזית</div>
+        <div class="tab">עכשיו</div>
+      </div>
+      <div class="date-bar">
+        <span class="back-arrow">‹</span>
+        <span class="date-text">{date_str} &nbsp;<b>היום</b></span>
+      </div>
+    """
+    st.markdown(header_html, unsafe_allow_html=True)
+
     html_table = '<table class="forecast-table">'
-    html_table += '<tr class="header-row"><th>שעה</th><th>גובה</th><th>גלים</th><th>רוח</th><th>כיוון</th><th>סוואל</th><th>מחזור</th></tr>'
-    
-    for h in data[::3]:
-        wave_max = int(h['swell_ht_mt']*100)
+    html_table += (
+        '<tr><th>שעה</th><th>גובה</th><th>גלים</th><th>רוח</th>'
+        '<th>כיוון</th><th>סוואל</th><th>מחזור</th><th>כיוון</th></tr>'
+    )
+
+    for i, h in enumerate(data[::3]):
+        wave_max = int(h['swell_ht_mt'] * 100)
         wave_min = max(0, wave_max - 20)
         wave_desc = "חזה" if wave_max > 40 else "קרסול"
-        wind_class = "wind-green" if h['wind_kph'] < 14 else "wind-orange"
-        
-        # שים לב שאין פה שום הדפסה של Streamlit - רק בניית מחרוזת
+
+        wind_kph = int(h['wind_kph'])
+        wind_class = "wind-green" if wind_kph < 10 else "wind-orange"
+        wind_deg = h.get('wind_degree', 0)
+
+        height_class = "height-high" if wave_max >= 65 else "height-low"
+
+        row_class = "row-even" if i % 2 == 0 else "row-odd"
+
+        # כיוון הסוואל (אם קיים בתשובת ה-API; אחרת נופל חזרה לכיוון הרוח)
+        swell_dir_text = WIND_DIRS.get(h.get('swell_dir'), h.get('swell_dir', WIND_DIRS.get(h['wind_dir'], h['wind_dir'])))
+        swell_deg = h.get('swell_degree', wind_deg)
+
         html_table += f'''
-        <tr class="data-row">
-            <td>{h['time'].split(' ')[1]}</td>
-            <td><div class="wave-cell">{wave_max} - {wave_min} ס"מ</div></td>
-            <td>{wave_desc}</td>
-            <td><span class="{wind_class}">{int(h['wind_kph'])} קמ"ש</span></td>
-            <td>{WIND_DIRS.get(h['wind_dir'], h['wind_dir'])}</td>
-            <td>{wave_max} ס"מ</td>
-            <td>{h['swell_period_secs']} שנ'</td>
+        <tr class="{row_class}">
+            <td class="plain">{h['time'].split(' ')[1]}</td>
+            <td class="height-cell {height_class}">{wave_max} - {wave_min} ס"מ</td>
+            <td class="plain">{wave_desc}</td>
+            <td class="wind-cell {wind_class}">
+                <div class="wind-inner">
+                    {arrow_svg(wind_deg)}
+                    <span>{wind_kph} קמ"ש</span>
+                </div>
+            </td>
+            <td class="plain">{WIND_DIRS.get(h['wind_dir'], h['wind_dir'])}</td>
+            <td class="plain">{wave_max} ס"מ</td>
+            <td class="plain">{h['swell_period_secs']} שנ'</td>
+            <td class="plain">
+                <div class="swell-dir-icon">
+                    {arrow_svg(swell_deg, color="#333", size=14)}
+                </div>
+            </td>
         </tr>
         '''
-    html_table += '</table>'
-    
-    # רינדור הכל בפקודה אחת בלבד!
+    html_table += '</table></div>'
+
     st.markdown(html_table, unsafe_allow_html=True)
 else:
     st.error("לא ניתן למשוך נתונים.")
