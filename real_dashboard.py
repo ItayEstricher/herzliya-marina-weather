@@ -6,60 +6,58 @@ from datetime import datetime
 # הגדרות הרצליה
 LAT, LON = 32.1615, 34.7938
 
-st.set_page_config(page_title="דשבורד מרינה הרצליה", page_icon="🌊", layout="centered")
+st.set_page_config(page_title="דשבורד מרינה הרצליה", page_icon="🌊", layout="wide")
 
-# עיצוב CSS המקצועי
+# עיצוב CSS מותאם לטבלה רחבה
 st.markdown("""
 <style>
     body { direction: rtl; font-family: 'Segoe UI', sans-serif; }
-    .stApp { background-color: #f0f4f8; }
-    .top-header { background: #1da1f2; color: white; padding: 20px; text-align: center; font-size: 28px; font-weight: 700; border-radius: 10px 10px 0 0; box-shadow: 0px 4px 6px rgba(0,0,0,0.1); }
-    .table-container { background: white; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); overflow: hidden; margin-top: 20px; }
-    .t-header { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; background: #f8f9fa; padding: 15px; font-weight: bold; text-align: center; border-bottom: 2px solid #eee; }
-    .t-row { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; align-items: center; text-align: center; padding: 15px; border-bottom: 1px solid #f1f1f1; }
-    .wave-box { background-color: #0077bb; color: white; padding: 10px; border-radius: 8px; font-weight: bold; }
+    .t-header { display: grid; grid-template-columns: 0.5fr 1fr 1fr 1fr 1fr 1fr 1fr; background: #f8f9fa; padding: 10px; font-weight: bold; text-align: center; border-bottom: 2px solid #ddd; }
+    .t-row { display: grid; grid-template-columns: 0.5fr 1fr 1fr 1fr 1fr 1fr 1fr; align-items: center; text-align: center; padding: 10px; border-bottom: 1px solid #eee; }
+    .wind-box { padding: 5px; border-radius: 5px; color: white; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
-def get_marine_data():
-    url = "https://marine-api.open-meteo.com/v1/marine"
-    params = {
-        "latitude": LAT,
-        "longitude": LON,
-        "hourly": ["wave_height", "swell_wave_height", "swell_wave_period"],
-        "timezone": "auto",
-        "forecast_days": 1
-    }
-    response = requests.get(url, params=params)
-    return response.json()
+def get_wave_desc(h):
+    if h < 0.5: return "קרסול"
+    if h < 1.0: return "חזה"
+    return "ראש"
 
-st.markdown('<div class="top-header">הרצליה - מרינה 🌊</div>', unsafe_allow_html=True)
+def get_dir(deg):
+    if deg is None: return "-"
+    dirs = ["צפונית", "צפון-מזרחית", "מזרחית", "דרום-מזרחית", "דרומית", "דרום-מערבית", "מערבית", "צפון-מערבית"]
+    return dirs[int((deg + 22.5) % 360 / 45)]
 
-if st.button("🔄 רענן נתונים ימיים"):
-    with st.spinner("מושך נתונים..."):
-        try:
-            data = get_marine_data()
-            hourly = data['hourly']
-            
-            # בניית הטבלה כ-String פשוט
-            html = '<div class="table-container"><div class="t-header"><div>שעה</div><div>גלים</div><div>סוול</div><div>מחזור</div></div>'
-            
-            for i in range(0, 24, 3):
-                time_val = datetime.fromisoformat(hourly['time'][i]).strftime("%H:%M")
-                wave = hourly['wave_height'][i]
-                swell = hourly['swell_wave_height'][i]
-                period = hourly['swell_wave_period'][i]
-                
-                html += f'''
-                <div class="t-row">
-                    <div style="font-weight:bold;">{time_val}</div>
-                    <div class="wave-box">{wave} מ'</div>
-                    <div style="color:#0077bb; font-weight:bold;">{swell} מ'</div>
-                    <div>{period} שנ'</div>
-                </div>'''
-            
-            html += '</div>'
-            st.markdown(html, unsafe_allow_html=True)
-            st.success("הנתונים עודכנו!")
-        except Exception as e:
-            st.error(f"שגיאה: {e}")
+def get_combined_data():
+    weather = requests.get(f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&hourly=temperature_2m,wind_speed_10m,wind_direction_10m&forecast_days=1").json()
+    marine = requests.get(f"https://marine-api.open-meteo.com/v1/marine?latitude={LAT}&longitude={LON}&hourly=wave_height,swell_wave_height,swell_wave_period,wave_direction&forecast_days=1").json()
+    return weather['hourly'], marine['hourly']
+
+st.title("🌊 תחזית מרינה הרצליה")
+
+if st.button("🔄 רענן נתונים"):
+    w, m = get_combined_data()
+    
+    html = '<div class="t-header"><div>שעה</div><div>גובה (ס"מ)</div><div>סוג גלים</div><div>סוול</div><div>מחזור</div><div>רוח</div><div>כיוון</div></div>'
+    
+    for i in range(6, 20, 3): # מציג מ-06:00 עד 18:00
+        time = datetime.fromisoformat(w['time'][i]).strftime("%H:%M")
+        wave_m = m['wave_height'][i]
+        wave_cm = int(wave_m * 100)
+        swell = int(m['swell_wave_height'][i] * 100)
+        period = m['swell_wave_period'][i]
+        wind_speed = int(w['wind_speed_10m'][i])
+        wind_dir = get_dir(w['wind_direction_10m'][i])
+        
+        html += f'''
+        <div class="t-row">
+            <div>{time}</div>
+            <div style="color:#0077bb; font-weight:bold;">{wave_cm-10}-{wave_cm+10}</div>
+            <div>{get_wave_desc(wave_m)}</div>
+            <div>{swell} ס"מ</div>
+            <div>{period} שנ'</div>
+            <div class="wind-box" style="background:#27ae60;">{wind_speed} קמ"ש</div>
+            <div>{wind_dir}</div>
+        </div>'''
+    
+    st.markdown(html, unsafe_allow_html=True)
