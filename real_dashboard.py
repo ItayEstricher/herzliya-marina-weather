@@ -6,7 +6,7 @@ from datetime import datetime
 # =========================
 # הגדרות משתמש
 # =========================
-API_KEY = "K3PMSQQBKTo2wtdxiRNi8U8WvtANpl8o"
+API_KEY = st.secrets["WINDY_API_KEY"]
 LAT = 32.1615
 LON = 34.7938
 
