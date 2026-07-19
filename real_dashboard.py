@@ -11,8 +11,8 @@ st.set_page_config(page_title="דשבורד מרינה הרצליה", page_icon=
 st.markdown("""
 <style>
     body { direction: rtl; font-family: 'Segoe UI', sans-serif; }
-    .t-header { display: grid; grid-template-columns: 0.5fr 1fr 1fr 1fr 1fr 1fr 1fr; background: #f8f9fa; padding: 12px; font-weight: bold; text-align: center; border-bottom: 2px solid #ddd; }
-    .t-row { display: grid; grid-template-columns: 0.5fr 1fr 1fr 1fr 1fr 1fr 1fr; align-items: center; text-align: center; padding: 12px; border-bottom: 1px solid #eee; }
+    .t-header { display: grid; grid-template-columns: repeat(7, 1fr); background: #f8f9fa; padding: 12px; font-weight: bold; text-align: center; border-bottom: 2px solid #ddd; }
+    .t-row { display: grid; grid-template-columns: repeat(7, 1fr); align-items: center; text-align: center; padding: 12px; border-bottom: 1px solid #eee; }
     .wind-box { padding: 5px; border-radius: 5px; color: white; font-weight: bold; background: #27ae60; }
 </style>
 """, unsafe_allow_html=True)
@@ -31,12 +31,9 @@ def get_data():
     try:
         w_url = f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&hourly=temperature_2m,wind_speed_10m,wind_direction_10m&forecast_days=1"
         m_url = f"https://marine-api.open-meteo.com/v1/marine?latitude={LAT}&longitude={LON}&hourly=wave_height,swell_wave_height,swell_wave_period&forecast_days=1"
-        
         w_data = requests.get(w_url).json()
         m_data = requests.get(m_url).json()
-        
-        if 'hourly' not in w_data or 'hourly' not in m_data:
-            return None, None
+        if 'hourly' not in w_data or 'hourly' not in m_data: return None, None
         return w_data['hourly'], m_data['hourly']
     except:
         return None, None
@@ -48,7 +45,10 @@ if st.button("🔄 רענן נתונים"):
         w, m = get_data()
         
         if w and m:
-            html = '<div class="t-header"><div>שעה</div><div>גובה (ס"מ)</div><div>סוג גלים</div><div>סוול (מ')</div><div>מחזור</div><div>רוח (קמ"ש)</div><div>כיוון</div></div>'
+            # בניית הטבלה בשלבים למניעת שגיאות סינטקס
+            html = '<div class="t-header">'
+            html += '<div>שעה</div><div>גובה (ס"מ)</div><div>סוג גלים</div><div>סוול (מ\')</div><div>מחזור</div><div>רוח (קמ"ש)</div><div>כיוון</div>'
+            html += '</div>'
             
             for i in range(6, 20, 3):
                 time = datetime.fromisoformat(w['time'][i]).strftime("%H:%M")
@@ -70,6 +70,6 @@ if st.button("🔄 רענן נתונים"):
                     <div>{wind_dir}</div>
                 </div>'''
             
-            st.markdown(html + '</div>', unsafe_allow_html=True)
+            st.markdown(html, unsafe_allow_html=True)
         else:
-            st.error("לא ניתן למשוך נתונים מהשרת. נסה שוב מאוחר יותר.")
+            st.error("לא ניתן למשוך נתונים.")
