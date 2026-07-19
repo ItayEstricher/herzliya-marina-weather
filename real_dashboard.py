@@ -6,11 +6,9 @@ import datetime
 # ==== הגדרות ====
 API_KEY = st.secrets["WEATHER_API_KEY"]
 LAT, LON = 32.1615, 34.7938
+MAX_FORECAST_DAYS = 7  # מגבלת ה-Marine API של weatherapi.com (עד 7 ימים, תלוי בתוכנית)
 
 st.set_page_config(page_title="הרצליה - מרינה", layout="wide")
-
-if st.button("🔄 רענן נתונים"):
-    st.cache_data.clear()
 
 # מילון תרגום לכיווני רוח
 WIND_DIRS = {
@@ -20,12 +18,14 @@ WIND_DIRS = {
     "W": "מערבית", "WNW": "צפון-מערבית", "NW": "צפון-מערבית", "NNW": "צפון-מערבית"
 }
 
+WEEKDAYS_HE = ["שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "ראשון"]
+
 
 @st.cache_data(ttl=3600)
-def get_data():
-    url = f"https://api.weatherapi.com/v1/marine.json?key={API_KEY}&q={LAT},{LON}&days=1"
+def get_data(days: int):
+    url = f"https://api.weatherapi.com/v1/marine.json?key={API_KEY}&q={LAT},{LON}&days={days}"
     res = requests.get(url).json()
-    return res['forecast']['forecastday'][0]['hour']
+    return res.get('forecast', {}).get('forecastday', [])
 
 
 def arrow_svg(deg, color="white", size=16):
@@ -37,7 +37,7 @@ def arrow_svg(deg, color="white", size=16):
     )
 
 
-# ==== CSS (מחרוזת רגילה, לא f-string, כדי לא להתנגש עם {} של ה-HTML) ====
+# ==== CSS (מחרוזת רגילה, לא f-string) ====
 CSS_STYLE = """
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body {
@@ -59,27 +59,17 @@ body {
 }
 .top-bar .icon { font-size: 20px; opacity: 0.9; }
 
-.tabs-bar {
-    background: #1a8fd1;
-    display: flex;
-    justify-content: space-around;
-    padding: 10px 0 0 0;
-    border-bottom: 1px solid rgba(255,255,255,0.25);
-}
-.tab { color: rgba(255,255,255,0.75); font-size: 15px; padding-bottom: 10px; }
-.tab.active { color: white; font-weight: 700; border-bottom: 3px solid white; }
-.badge {
-    background: white; color: #1179b8; border-radius: 50%;
-    font-size: 11px; font-weight: 700; padding: 1px 6px; margin-right: 4px;
-}
-
 .date-bar {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 18px; background: white; border-bottom: 1px solid #eee;
-    font-size: 16px; color: #333;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 14px 18px;
+    background: white;
+    border-bottom: 1px solid #eee;
+    font-size: 16px;
+    color: #333;
 }
-.back-arrow { color: #999; font-size: 20px; }
-.date-bar b { font-size: 19px; }
+.date-bar b { font-size: 19px; margin-right: 6px; }
 
 table { width: 100%; border-collapse: collapse; text-align: center; }
 th {
@@ -103,13 +93,48 @@ td { padding: 6px 4px; font-size: 15px; color: #333; vertical-align: middle; }
 .swell-dir-icon { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 12px; color: #333; }
 """
 
-data = get_data()
+# ==== שורת בקרה: תאריך + רענון, מיושרים לימין ====
+all_days = get_data(MAX_FORECAST_DAYS)
 
-if data:
-    date_str = datetime.date.today().strftime("%d/%m/%Y")
+# בונים רשימת תאריכים זמינה בפועל (תלוי מה שהתוכנית שלכם מחזירה בפועל, עד 7)
+date_options = [d['date'] for d in all_days] if all_days else []
+
+spacer_col, date_col, refresh_col = st.columns([4, 2, 1])
+with date_col:
+    if date_options:
+        today_str = datetime.date.today().strftime("%Y-%m-%d")
+        default_index = date_options.index(today_str) if today_str in date_options else 0
+        selected_date = st.selectbox(
+            "תאריך", date_options, index=default_index, label_visibility="collapsed"
+        )
+    else:
+        selected_date = None
+with refresh_col:
+    if st.button("🔄 רענן"):
+        st.cache_data.clear()
+        st.rerun()
+
+if not all_days:
+    st.error("לא ניתן למשוך נתונים.")
+else:
+    day_data = next((d for d in all_days if d['date'] == selected_date), all_days[0])
+    hours = day_data['hour']
+
+    # תווית "היום" / "מחר" / שם יום בשבוע
+    today = datetime.date.today()
+    picked = datetime.datetime.strptime(day_data['date'], "%Y-%m-%d").date()
+    delta = (picked - today).days
+    if delta == 0:
+        day_label = "היום"
+    elif delta == 1:
+        day_label = "מחר"
+    else:
+        day_label = f"יום {WEEKDAYS_HE[picked.weekday()]}"
+
+    date_display = picked.strftime("%d/%m/%Y")
 
     rows_html = ""
-    for i, h in enumerate(data[::3]):
+    for i, h in enumerate(hours[::3]):
         wave_max = int(h['swell_ht_mt'] * 100)
         wave_min = max(0, wave_max - 20)
         wave_desc = "חזה" if wave_max > 40 else "קרסול"
@@ -121,7 +146,8 @@ if data:
         height_class = "height-high" if wave_max >= 65 else "height-low"
         row_class = "row-even" if i % 2 == 0 else "row-odd"
 
-        swell_deg = h.get('swell_degree', wind_deg)
+        # swell_dir הוא מעלות (float), swell_dir_16_point הוא הטקסט המצפני
+        swell_deg = h.get('swell_dir', wind_deg)
 
         rows_html += (
             f"<tr class='{row_class}'>"
@@ -157,23 +183,21 @@ if data:
   <div class="top-bar">
     <span class="icon">⚙️</span>
     <span>הרצליה - מרינה</span>
-    <span class="icon">📍</span>
-  </div>
-  <div class="tabs-bar">
-    <div class="tab">קהילה<span class="badge">15</span></div>
-    <div class="tab">מתקדם</div>
-    <div class="tab active">תחזית</div>
-    <div class="tab">עכשיו</div>
+    <span class="icon">🌊</span>
   </div>
   <div class="date-bar">
-    <span class="back-arrow">‹</span>
-    <span class="date-text">{date_str} &nbsp;<b>היום</b></span>
+    <span class="date-text">{date_display}</span>
+    <b>{day_label}</b>
   </div>
   {table_html}
 </div>
 </body>
 </html>"""
 
-    components.html(full_html, height=560 + 46 * len(data[::3]), scrolling=False)
-else:
-    st.error("לא ניתן למשוך נתונים.")
+    components.html(full_html, height=420 + 46 * len(hours[::3]), scrolling=False)
+
+    if len(all_days) < MAX_FORECAST_DAYS:
+        st.caption(
+            f"התוכנית שלכם ב-weatherapi.com מחזירה כרגע {len(all_days)} ימי תחזית ימית. "
+            f"המקסימום האפשרי במסלול Marine API הוא 7 ימים (לא 14) — תלוי בתוכנית המנוי שלכם."
+        )
