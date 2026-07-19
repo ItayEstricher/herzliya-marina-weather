@@ -48,38 +48,18 @@ st.markdown("""
 # =========================
 def get_weather():
     url = "https://api.windy.com/api/point-forecast/v2"
-    
-    # בקשה 1: אוויר (gfs)
-    payload_air = {
+    payload = {
         "lat": LAT,
         "lon": LON,
         "model": "gfs",
-        "parameters": ["temp", "wind", "windGust"],
+        "parameters": ["temp", "wind", "windGust", "waves_height", "swell1_height"],
         "levels": ["surface"],
         "key": API_KEY
     } 
-    
-    # בקשה 2: ים (gfsWave)
-    payload_sea = {
-        "lat": LAT,
-        "lon": LON,
-        "model": "gfsWave",
-        "parameters": ["waves", "swell1"],
-        "levels": ["surface"],
-        "key": API_KEY
-    }
-    
-    # שליפת נתוני אוויר
-    r_air = requests.post(url, json=payload_air)
-    if r_air.status_code != 200:
-        raise Exception(f"Air Model Error ({r_air.status_code}): {r_air.text}")
-        
-    # שליפת נתוני ים
-    r_sea = requests.post(url, json=payload_sea)
-    if r_sea.status_code != 200:
-        raise Exception(f"Sea Model Error ({r_sea.status_code}): {r_sea.text}")
-        
-    return r_air.json(), r_sea.json()
+    r = requests.post(url, json=payload)
+    if r.status_code != 200:
+        raise Exception(f"{r.status_code} Error: {r.text}")
+    return r.json()
 
 def calculate_wind(u, v):
     speed = math.sqrt(u*u + v*v) * 3.6
@@ -110,7 +90,7 @@ st.markdown("""
 if st.button("🔄 רענן נתונים עדכניים"):
     with st.spinner("מושך נתונים מ-Windy..."):
         try:
-            air_data, sea_data = get_weather()
+            data = get_weather()
             
             html_table = f"""
             <div style="margin-bottom:10px; font-weight:bold; font-size:18px; text-align: right; padding-right: 5px;">
@@ -129,45 +109,29 @@ if st.button("🔄 רענן נתונים עדכניים"):
             rows_data = []
             count = 0
             
-            for i, timestamp in enumerate(air_data["ts"]):
+            for i, timestamp in enumerate(data["ts"]):
                 dt = datetime.fromtimestamp(timestamp / 1000)
                 
-                # לוקחים שעות עגולות בקפיצות של 3
                 if dt.hour % 3 == 0:
                     hour_str = dt.strftime("%H:%M")
                     icon = "☀️" if 6 <= dt.hour <= 18 else "🌙"
                     
-                    def get_air_val(param, default="-"):
-                        key = f"{param}-surface"
-                        if key in air_data: return air_data[key][i]
-                        if param in air_data: return air_data[param][i]
-                        return default
-                        
-                    temp_k = get_air_val("temp")
-                    temp = round(temp_k - 273.15) if temp_k != "-" else "-"
+                    # שליפת נתונים עם הגנה
+                    temp = round(data.get("temp-surface", [0]*20)[i] - 273.15) if "temp-surface" in data else "-"
                     
-                    u = get_air_val("wind_u")
-                    v = get_air_val("wind_v")
-                    speed, deg = calculate_wind(u, v) if u != "-" else (0, 0)
+                    u = data.get("wind_u-surface", [0]*20)[i]
+                    v = data.get("wind_v-surface", [0]*20)[i]
+                    speed, deg = calculate_wind(u, v)
                     
-                    gust_ms = get_air_val("gust")
-                    if gust_ms == "-": gust_ms = get_air_val("windGust")
-                    gust = round(gust_ms * 3.6) if gust_ms != "-" else "-"
+                    gust_raw = data.get("gust-surface", [0]*20)[i]
+                    gust = round(gust_raw * 3.6)
                     
-                    # איתור נתוני הים המקבילים לאותה שעה
-                    wave_m = "-"
-                    swell_cm = "-"
+                    # נתוני ים עם בדיקת null
+                    wave_raw = data.get("waves_height-surface", [None]*20)[i]
+                    wave_m = round(wave_raw, 1) if wave_raw is not None else "-"
                     
-                    if "ts" in sea_data and timestamp in sea_data["ts"]:
-                        sea_idx = sea_data["ts"].index(timestamp)
-                        
-                        waves_list = sea_data.get("waves-surface", sea_data.get("waves", []))
-                        if sea_idx < len(waves_list) and waves_list[sea_idx] is not None:
-                            wave_m = round(waves_list[sea_idx], 1)
-                            
-                        swell_list = sea_data.get("swell1-surface", sea_data.get("swell1", []))
-                        if sea_idx < len(swell_list) and swell_list[sea_idx] is not None:
-                            swell_cm = int(swell_list[sea_idx] * 100)
+                    swell_raw = data.get("swell1_height-surface", [None]*20)[i]
+                    swell_cm = int(swell_raw * 100) if swell_raw is not None else "-"
                     
                     color_class = get_wind_color(speed)
                     heb_dir = get_hebrew_direction(deg)
@@ -193,26 +157,14 @@ if st.button("🔄 רענן נתונים עדכניים"):
                         </div>
                     </div>
                     """
-                    
                     rows_data.append((sort_key, row_html))
                     count += 1
-                    
-                    if count >= 6:
-                        break
+                    if count >= 6: break
                     
             rows_data.sort(key=lambda x: x[0])
-            
-            for key, row in rows_data:
-                html_table += row
-                
+            for key, row in rows_data: html_table += row
             html_table += "</div>"
             st.markdown(html_table.replace('\n', ''), unsafe_allow_html=True)
             
-            with st.expander("🛠️ בדיקת תקלות - נתונים גולמיים"):
-                st.write("**Air Data (GFS)**")
-                st.json(air_data)
-                st.write("**Sea Data (GFSWave)**")
-                st.json(sea_data)
-                
         except Exception as e:
-            st.error(f"אירעה שגיאה בחיבור: {e}")
+            st.error(f"אירעה שגיאה: {e}")
