@@ -36,23 +36,23 @@ def get_marine_data():
 st.markdown('<div class="top-header">הרצליה - מרינה 🌊</div>', unsafe_allow_html=True)
 
 if st.button("🔄 רענן נתונים ימיים"):
-    with st.spinner("מושך נתונים מ-Open-Meteo..."):
+    with st.spinner("מושך נתונים..."):
         try:
             data = get_marine_data()
             hourly = data['hourly']
             
-            html = '<div class="table-container"><div class="t-header"><div>שעה</div><div>גלים (מ')</div><div>סוול (מ')</div><div>מחזור (שנ')</div></div>'
+            # בניית הטבלה כ-String פשוט
+            html = '<div class="table-container"><div class="t-header"><div>שעה</div><div>גלים</div><div>סוול</div><div>מחזור</div></div>'
             
-            # הצגת כל 3 שעות
             for i in range(0, 24, 3):
-                time = datetime.fromisoformat(hourly['time'][i]).strftime("%H:%M")
+                time_val = datetime.fromisoformat(hourly['time'][i]).strftime("%H:%M")
                 wave = hourly['wave_height'][i]
                 swell = hourly['swell_wave_height'][i]
                 period = hourly['swell_wave_period'][i]
                 
                 html += f'''
                 <div class="t-row">
-                    <div style="font-weight:bold;">{time}</div>
+                    <div style="font-weight:bold;">{time_val}</div>
                     <div class="wave-box">{wave} מ'</div>
                     <div style="color:#0077bb; font-weight:bold;">{swell} מ'</div>
                     <div>{period} שנ'</div>
@@ -60,6 +60,6 @@ if st.button("🔄 רענן נתונים ימיים"):
             
             html += '</div>'
             st.markdown(html, unsafe_allow_html=True)
-            st.success("נתונים עודכנו בהצלחה!")
+            st.success("הנתונים עודכנו!")
         except Exception as e:
             st.error(f"שגיאה: {e}")
