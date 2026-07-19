@@ -49,18 +49,18 @@ st.markdown("""
 def get_weather():
     url = "https://api.windy.com/api/point-forecast/v2"
     
-    # בקשה אחת נקייה למודל ecmwf, ללא ציון 'levels' שגורם לקריסה
+    # הוספנו בחזרה את levels כפי שהשרת דורש
     payload = {
         "lat": LAT,
         "lon": LON,
         "model": "ecmwf",
         "parameters": ["temp", "wind", "windGust", "waves", "swell1"],
+        "levels": ["surface"],
         "key": API_KEY
     } 
     
     r = requests.post(url, json=payload)
     
-    # תפיסת שגיאות חכמה שמדפיסה את הודעת השרת
     if r.status_code != 200:
         raise Exception(f"{r.status_code} Error: {r.text}")
         
@@ -117,12 +117,10 @@ if st.button("🔄 רענן נתונים עדכניים"):
             for i, timestamp in enumerate(data["ts"]):
                 dt = datetime.fromtimestamp(timestamp / 1000)
                 
-                # לוקחים שעות עגולות בקפיצות של 3
                 if dt.hour % 3 == 0:
                     hour_str = dt.strftime("%H:%M")
                     icon = "☀️" if 6 <= dt.hour <= 18 else "🌙"
                     
-                    # פונקציית עזר לשליפת הנתונים בבטחה (עם או בלי -surface)
                     def get_val(param, idx, default="-"):
                         key1 = f"{param}-surface"
                         key2 = param
@@ -130,21 +128,17 @@ if st.button("🔄 רענן נתונים עדכניים"):
                         if key2 in data: return data[key2][idx]
                         return default
                         
-                    # שליפת טמפרטורה
                     temp_k = get_val("temp", i)
                     temp = round(temp_k - 273.15) if temp_k != "-" else "-"
                     
-                    # שליפת רוח
                     u = get_val("wind_u", i)
                     v = get_val("wind_v", i)
                     speed, deg = calculate_wind(u, v) if u != "-" else (0, 0)
                     
-                    # שליפת משבים
                     gust_ms = get_val("gust", i)
                     if gust_ms == "-": gust_ms = get_val("windGust", i)
                     gust = round(gust_ms * 3.6) if gust_ms != "-" else "-"
                     
-                    # שליפת גלים וסוול
                     wave_raw = get_val("waves", i)
                     wave_m = round(wave_raw, 1) if wave_raw != "-" else "-"
                     
@@ -179,7 +173,6 @@ if st.button("🔄 רענן נתונים עדכניים"):
                     rows_data.append((sort_key, row_html))
                     count += 1
                     
-                    # מפסיקים אחרי 6 שורות
                     if count >= 6:
                         break
                     
@@ -191,7 +184,6 @@ if st.button("🔄 רענן נתונים עדכניים"):
             html_table += "</div>"
             st.markdown(html_table.replace('\n', ''), unsafe_allow_html=True)
             
-            # --- מצב מפתחים ---
             with st.expander("🛠️ בדיקת תקלות - נתונים גולמיים (לחץ לפתיחה)"):
                 st.json(data)
                 
